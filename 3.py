@@ -222,7 +222,7 @@ if __name__ == "__main__":
 import json
 from pathlib import Path
 
-'''
+
 class JsonConfigTool:
     """JSON 配置文件处理工具：读取、修改、保存配置。"""
 
@@ -374,12 +374,11 @@ class ConsoleApp:
 if __name__ == "__main__":
     app = ConsoleApp()
     app.run()
+
 '''
 from datetime import datetime
 from pathlib import Path
 import traceback
-
-
 class SimpleLogger:
     """简单日志记录器：记录程序运行状态和错误信息。"""
 
@@ -454,3 +453,4 @@ if __name__ == "__main__":
     divide(10, 0, logger)
 
     logger.info("程序结束")
+'''
