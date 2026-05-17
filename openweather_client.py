@@ -7,6 +7,9 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+from pathlib import Path
+from time import time
 from typing import Any
 
 # 封装OpenWeather天气API客户端，用于查询实时天气数据
@@ -76,6 +79,9 @@ class OpenWeatherClient:
         lang: str = "zh_cn",
         timeout: int = 15,
         base_url: str = BASE_URL,
+        cache_file: str | Path = ".openweather_cache.json",
+        cache_ttl_seconds: int = 600,
+        cache_enabled: bool = True,
     ) -> None:
         self.api_key = api_key or os.getenv("OPENWEATHER_API_KEY")
         if not self.api_key:
@@ -90,6 +96,9 @@ class OpenWeatherClient:
         self.lang = lang
         self.timeout = timeout
         self.base_url = base_url
+        self.cache_file = Path(cache_file)
+        self.cache_ttl_seconds = cache_ttl_seconds
+        self.cache_enabled = cache_enabled
 
     def current_by_city(self, city: str) -> CurrentWeather:
         if not city.strip():
@@ -144,6 +153,11 @@ class OpenWeatherClient:
             "lang": self.lang,
             **params,
         }
+        cache_key = self._cache_key(query_params)
+        cached_data = self._read_cache(cache_key)
+        if cached_data is not None:
+            return cached_data
+
         url = f"{self.base_url}?{urllib.parse.urlencode(query_params)}"
         request = urllib.request.Request(
             url,
@@ -170,7 +184,70 @@ class OpenWeatherClient:
                 f"API returned an error: {data.get('message', data)}"
             )
 
+        self._write_cache(cache_key, data)
         return data
+
+    def clear_cache(self) -> None:
+        if self.cache_file.exists():
+            self.cache_file.unlink()
+
+    def _cache_key(self, query_params: dict[str, str | float]) -> str:
+        public_params = {
+            key: value for key, value in query_params.items() if key != "appid"
+        }
+        cache_payload = {
+            "base_url": self.base_url,
+            "params": public_params,
+        }
+        raw_key = json.dumps(cache_payload, ensure_ascii=False, sort_keys=True)
+        return sha256(raw_key.encode("utf-8")).hexdigest()
+
+    def _read_cache(self, cache_key: str) -> dict[str, Any] | None:
+        if not self.cache_enabled or self.cache_ttl_seconds <= 0:
+            return None
+        if not self.cache_file.exists():
+            return None
+
+        try:
+            cache = json.loads(self.cache_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        entry = cache.get("entries", {}).get(cache_key)
+        if not entry:
+            return None
+
+        if float(entry.get("expires_at", 0)) <= time():
+            return None
+
+        data = entry.get("data")
+        return data if isinstance(data, dict) else None
+
+    def _write_cache(self, cache_key: str, data: dict[str, Any]) -> None:
+        if not self.cache_enabled or self.cache_ttl_seconds <= 0:
+            return
+
+        try:
+            cache = json.loads(self.cache_file.read_text(encoding="utf-8"))
+            if not isinstance(cache, dict):
+                cache = {}
+        except (OSError, json.JSONDecodeError):
+            cache = {}
+
+        entries = cache.setdefault("entries", {})
+        entries[cache_key] = {
+            "created_at": time(),
+            "expires_at": time() + self.cache_ttl_seconds,
+            "data": data,
+        }
+
+        try:
+            self.cache_file.write_text(
+                json.dumps(cache, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            raise OpenWeatherError(f"Cannot write cache file: {exc}") from exc
 
     @staticmethod
     def _http_error_message(exc: urllib.error.HTTPError) -> str:
