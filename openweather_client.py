@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-
+# 封装OpenWeather天气API客户端，用于查询实时天气数据
 class OpenWeatherError(RuntimeError):
     """Raised when OpenWeather API cannot return valid weather data."""
 
@@ -196,4 +196,3 @@ def unit_labels(units: str) -> tuple[str, str]:
     if units == "standard":
         return "K", "m/s"
     return "C", "m/s"
-
